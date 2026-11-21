@@ -1,0 +1,5 @@
+Mahzen.exe (yerel sürüm 2) kaynağı. Derleme (Linux/Windows, Go 1.24):
+  deps/ altına: github.com/jchv/go-webview2 @56598839c808, github.com/jchv/go-winloader @c1995be93bd1, github.com/golang/sys @beda7e5e158e
+  page.html = gömülecek sayfa (son sürüm index.html)
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o Mahzen.exe .
+Yeni exe yayını: YAYINCI_SIFRE=... python3 yayinla.py --exe Mahzen.exe <yerel sürüm> "notlar"  (nativeVersion sabitini artır)

@@ -1,0 +1,365 @@
+// Mahzen masaüstü kabuğu (yerel sürüm 3: Wi‑Fi eşitleme sunucusu, lan.go).
+// Sayfa https://mahzen.local/index.html adresinden açılır (kayıtlar bu kökene bağlıdır, değiştirme),
+// WebView2 verisi exe'nin yanındaki veri/ klasöründe durur.
+package main
+
+import (
+	_ "embed"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+	"unsafe"
+
+	webview2 "github.com/jchv/go-webview2"
+	"github.com/jchv/go-webview2/pkg/edge"
+)
+
+const nativeVersion = 3
+
+//go:embed page.html
+var embeddedPage []byte
+
+var (
+	user32   = syscall.NewLazyDLL("user32.dll")
+	shell32  = syscall.NewLazyDLL("shell32.dll")
+	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
+
+	pGetWindowLongPtr    = user32.NewProc("GetWindowLongPtrW")
+	pSetWindowLongPtr    = user32.NewProc("SetWindowLongPtrW")
+	pSetWindowPos        = user32.NewProc("SetWindowPos")
+	pGetWindowPlacement  = user32.NewProc("GetWindowPlacement")
+	pSetWindowPlacement  = user32.NewProc("SetWindowPlacement")
+	pMonitorFromWindow   = user32.NewProc("MonitorFromWindow")
+	pGetMonitorInfo      = user32.NewProc("GetMonitorInfoW")
+	pShowWindow          = user32.NewProc("ShowWindow")
+	pIsZoomed            = user32.NewProc("IsZoomed")
+	pPostMessage         = user32.NewProc("PostMessageW")
+	pGetWindowRect       = user32.NewProc("GetWindowRect")
+	pMessageBox          = user32.NewProc("MessageBoxW")
+	pShellExecute        = shell32.NewProc("ShellExecuteW")
+	pOpenProcess         = kernel32.NewProc("OpenProcess")
+	pWaitForSingleObject = kernel32.NewProc("WaitForSingleObject")
+	pCloseHandle         = kernel32.NewProc("CloseHandle")
+	pDwmGetWindowAttr    = dwmapi.NewProc("DwmGetWindowAttribute")
+)
+
+const (
+	gwlStyle           = ^uintptr(15) // -16
+	wsOverlappedWindow = 0x00CF0000
+	wsPopup            = 0x80000000
+	wsVisible          = 0x10000000
+	swpNoZOrder        = 0x0004
+	swpNoOwnerZOrder   = 0x0200
+	swpFrameChanged    = 0x0020
+	swMaximize         = 3
+	swMinimize         = 6
+	swRestore          = 9
+	wmClose            = 0x0010
+	monitorNearest     = 2
+)
+
+type rect struct{ L, T, R, B int32 }
+type monitorInfo struct {
+	Size          uint32
+	Monitor, Work rect
+	Flags         uint32
+}
+type windowPlacement struct {
+	Length, Flags, ShowCmd uint32
+	MinPos, MaxPos         [2]int32
+	Normal                 rect
+	Device                 rect
+}
+
+var (
+	baseDir    string
+	w          webview2.WebView
+	hwnd       uintptr
+	fullscreen bool
+	savedPl    windowPlacement
+	havePl     bool
+)
+
+func u16(s string) uintptr { p, _ := syscall.UTF16PtrFromString(s); return uintptr(unsafe.Pointer(p)) }
+
+func messageBox(title, text string) {
+	pMessageBox.Call(0, u16(text), u16(title), 0x10)
+}
+
+var verRe = regexp.MustCompile(`APP_VERSION="([0-9.]+)"`)
+var numRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+func pageVersion(b []byte) string {
+	if m := verRe.FindSubmatch(b); m != nil {
+		return string(m[1])
+	}
+	return "0"
+}
+
+func compareVersions(a, b string) int {
+	x, y := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(x) || i < len(y); i++ {
+		var p, q int
+		if i < len(x) {
+			p, _ = strconv.Atoi(x[i])
+		}
+		if i < len(y) {
+			q, _ = strconv.Atoi(y[i])
+		}
+		if p != q {
+			if p < q {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// currentPage returns the folder whose index.html is newest: guncelleme/ (downloaded) or app/ (built in).
+func currentPage() string {
+	app := filepath.Join(baseDir, "app")
+	os.MkdirAll(app, 0755)
+	if old, err := os.ReadFile(filepath.Join(app, "index.html")); err != nil || string(old) != string(embeddedPage) {
+		os.WriteFile(filepath.Join(app, "index.html"), embeddedPage, 0644)
+	}
+	upd := filepath.Join(baseDir, "guncelleme")
+	if b, err := os.ReadFile(filepath.Join(upd, "surum.txt")); err == nil {
+		v := strings.TrimSpace(string(b))
+		if _, err := os.Stat(filepath.Join(upd, "index.html")); err == nil && compareVersions(v, pageVersion(embeddedPage)) > 0 {
+			return upd
+		}
+	}
+	return app
+}
+
+func openExternal(u string) {
+	l := strings.ToLower(u)
+	if !(strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "mailto:") || strings.HasPrefix(l, "tel:")) {
+		return
+	}
+	pShellExecute.Call(0, u16("open"), u16(u), 0, 0, 1)
+}
+
+func monitorRects() (mon, work rect) {
+	h, _, _ := pMonitorFromWindow.Call(hwnd, monitorNearest)
+	mi := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+	pGetMonitorInfo.Call(h, uintptr(unsafe.Pointer(&mi)))
+	return mi.Monitor, mi.Work
+}
+
+func setFullscreen(on bool) {
+	if on == fullscreen {
+		return
+	}
+	st, _, _ := pGetWindowLongPtr.Call(hwnd, gwlStyle)
+	if on {
+		savedPl = windowPlacement{Length: uint32(unsafe.Sizeof(windowPlacement{}))}
+		r, _, _ := pGetWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&savedPl)))
+		havePl = r != 0
+		m, _ := monitorRects()
+		pSetWindowLongPtr.Call(hwnd, gwlStyle, (st&^wsOverlappedWindow)|wsPopup|wsVisible)
+		pSetWindowPos.Call(hwnd, 0, uintptr(m.L), uintptr(m.T), uintptr(m.R-m.L), uintptr(m.B-m.T), swpNoZOrder|swpNoOwnerZOrder|swpFrameChanged)
+	} else {
+		pSetWindowLongPtr.Call(hwnd, gwlStyle, (st&^wsPopup)|wsOverlappedWindow|wsVisible)
+		if havePl {
+			pSetWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&savedPl)))
+		}
+		pSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, swpNoZOrder|swpNoOwnerZOrder|swpFrameChanged|0x0001|0x0002)
+	}
+	fullscreen = on
+}
+
+// snap puts the window on the left or right half of the screen's work area.
+func snap(right bool) {
+	setFullscreen(false)
+	if z, _, _ := pIsZoomed.Call(hwnd); z != 0 {
+		pShowWindow.Call(hwnd, swRestore)
+	}
+	_, wk := monitorRects()
+	half := (wk.R - wk.L) / 2
+	x := wk.L
+	if right {
+		x = wk.L + half
+	}
+	// the visible frame is smaller than the window rect on Windows 10/11: compensate the invisible borders
+	var wr, fr rect
+	pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
+	var dl, dt, dr, db int32
+	if pDwmGetWindowAttr.Find() == nil {
+		if r, _, _ := pDwmGetWindowAttr.Call(hwnd, 9, uintptr(unsafe.Pointer(&fr)), unsafe.Sizeof(fr)); r == 0 {
+			dl, dt, dr, db = fr.L-wr.L, fr.T-wr.T, wr.R-fr.R, wr.B-fr.B
+		}
+	}
+	pSetWindowPos.Call(hwnd, 0, uintptr(x-dl), uintptr(wk.T-dt), uintptr(half+dl+dr), uintptr(wk.B-wk.T+dt+db), swpNoZOrder|swpNoOwnerZOrder)
+}
+
+type winState struct {
+	Fs  bool `json:"fs"`
+	Max bool `json:"max"`
+}
+
+func state() winState {
+	z, _, _ := pIsZoomed.Call(hwnd)
+	return winState{Fs: fullscreen, Max: z != 0}
+}
+
+func notifyState() {
+	s := state()
+	w.Eval(fmt.Sprintf("window.onMahzenFs&&window.onMahzenFs(%v);window.onMahzenWin&&window.onMahzenWin({fs:%v,max:%v})", s.Fs, s.Fs, s.Max))
+}
+
+// winAction: min, max (maximize/restore), close, left, right, fs (full screen on/off)
+func winAction(a string) winState {
+	switch a {
+	case "min":
+		pShowWindow.Call(hwnd, swMinimize)
+	case "max":
+		if fullscreen {
+			setFullscreen(false)
+			pShowWindow.Call(hwnd, swMaximize)
+		} else if z, _, _ := pIsZoomed.Call(hwnd); z != 0 {
+			pShowWindow.Call(hwnd, swRestore)
+		} else {
+			pShowWindow.Call(hwnd, swMaximize)
+		}
+	case "close":
+		pPostMessage.Call(hwnd, wmClose, 0, 0)
+	case "left", "right":
+		snap(a == "right")
+	case "fs":
+		setFullscreen(!fullscreen)
+	}
+	go func() { time.Sleep(150 * time.Millisecond); w.Dispatch(notifyState) }()
+	return state()
+}
+
+func exePath() string { p, _ := os.Executable(); return p }
+
+// restart starts a fresh copy (which waits for this process to end) and quits.
+// A pending Mahzen.exe.new (native update) is swapped in first: a running exe can be renamed on Windows.
+func restart() {
+	exe := exePath()
+	if fi, err := os.Stat(exe + ".new"); err == nil && fi.Size() > 0 {
+		os.Remove(exe + ".old")
+		if os.Rename(exe, exe+".old") == nil {
+			if os.Rename(exe+".new", exe) != nil {
+				os.Rename(exe+".old", exe)
+			}
+		}
+	}
+	cmd := exec.Command(exe, "--bekle", strconv.Itoa(os.Getpid()))
+	cmd.Dir = baseDir
+	cmd.Start()
+	pPostMessage.Call(hwnd, wmClose, 0, 0)
+}
+
+func waitForPid(pid int) {
+	h, _, _ := pOpenProcess.Call(0x00100000, 0, uintptr(pid)) // SYNCHRONIZE
+	if h != 0 {
+		pWaitForSingleObject.Call(h, 15000)
+		pCloseHandle.Call(h)
+	}
+}
+
+func chromium(v webview2.WebView) *edge.Chromium {
+	f := reflect.ValueOf(v).Elem().FieldByName("browser")
+	f = reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
+	c, _ := f.Interface().(*edge.Chromium)
+	return c
+}
+
+func main() {
+	baseDir = filepath.Dir(exePath())
+	for i, a := range os.Args {
+		if a == "--bekle" && i+1 < len(os.Args) {
+			if pid, err := strconv.Atoi(os.Args[i+1]); err == nil {
+				waitForPid(pid)
+			}
+		}
+	}
+	exe := exePath()
+	for i := 0; i < 5; i++ { // left over from a native update
+		if _, err := os.Stat(exe + ".old"); err != nil || os.Remove(exe+".old") == nil {
+			break
+		}
+		time.Sleep(400 * time.Millisecond)
+	}
+	os.Remove(exe + ".new")
+
+	dir := currentPage()
+	w = webview2.NewWithOptions(webview2.WebViewOptions{
+		Debug:     false,
+		AutoFocus: true,
+		DataPath:  filepath.Join(baseDir, "veri"),
+		WindowOptions: webview2.WindowOptions{
+			Title: "Mahzen", Width: 1200, Height: 800, IconId: 2, Center: true,
+		},
+	})
+	if w == nil {
+		messageBox("Mahzen", "Mahzen açılamadı. Microsoft Edge WebView2 Runtime yüklü olmalı:\nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703")
+		return
+	}
+	defer w.Destroy()
+	hwnd = uintptr(w.Window())
+	c := chromium(w)
+	if c == nil {
+		messageBox("Mahzen", "WebView2 başlatılamadı.")
+		return
+	}
+	c.AcceleratorKeyCallback = func(vk uint) bool {
+		if vk == 0x7A { // F11
+			setFullscreen(!fullscreen)
+			notifyState()
+			return true
+		}
+		return false
+	}
+	c.SetPermission(edge.CoreWebView2PermissionKindNotifications, edge.CoreWebView2PermissionStateAllow)
+	if wv3 := c.GetICoreWebView2_3(); wv3 == nil || wv3.SetVirtualHostNameToFolderMapping("mahzen.local", dir, edge.COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW) != nil {
+		messageBox("Mahzen", "WebView2 sürümü eski. Lütfen Microsoft Edge WebView2 Runtime'ı güncelleyin.")
+		return
+	}
+
+	w.Bind("mahzenOpen", openExternal)
+	w.Bind("mahzenToggleFs", func() bool { setFullscreen(!fullscreen); notifyState(); return fullscreen })
+	w.Bind("mahzenNativeVersion", func() int { return nativeVersion })
+	w.Bind("mahzenSaveUpdate", func(v string, html string) bool {
+		if !verRe.MatchString(html) || !numRe.MatchString(v) {
+			return false
+		}
+		upd := filepath.Join(baseDir, "guncelleme")
+		os.MkdirAll(upd, 0755)
+		tmp := filepath.Join(upd, "index.html.tmp")
+		if os.WriteFile(tmp, []byte(html), 0644) != nil || os.Rename(tmp, filepath.Join(upd, "index.html")) != nil {
+			return false
+		}
+		return os.WriteFile(filepath.Join(upd, "surum.txt"), []byte(v), 0644) == nil
+	})
+	w.Bind("mahzenRestart", restart)
+	w.Bind("mahzenWin", winAction)
+	w.Bind("mahzenWinState", state)
+	// native update: the page downloads a new exe (base64), it is swapped in by mahzenRestart
+	w.Bind("mahzenSaveNative", func(ver int, b64 string) bool {
+		b, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil || len(b) < 1<<20 || b[0] != 'M' || b[1] != 'Z' || ver <= nativeVersion {
+			return false
+		}
+		return os.WriteFile(exePath()+".new", b, 0755) == nil
+	})
+
+	lanBind()
+
+	setFullscreen(true)
+	w.Navigate("https://mahzen.local/index.html?r=" + strconv.FormatInt(time.Now().UnixNano(), 36))
+	w.Run()
+}

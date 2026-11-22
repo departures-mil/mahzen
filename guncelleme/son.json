@@ -1,8 +1,8 @@
 {
- "surum": "3.4",
- "notlar": "Mahzen 3.4: Güncellemeler artık GitHub'dan geliyor (daha hızlı). İndirirken yüzde, MB, kalan ve hız görünür. Kayıtlarınız olduğu gibi kalır.",
- "dosya": "mahzen-3.4.html",
+ "surum": "3.5",
+ "notlar": "Mahzen 3.5: Admin duyuruları eklendi; yeni duyurular programda görünür, 🔔 düğmesinden okunur. Kayıtlarınız olduğu gibi kalır.",
+ "dosya": "mahzen-3.5.html",
  "yerel": 1,
- "sha": "ba9bca597290058f740696a2d25432b74b4244a78f9469c0d5c4ba56e4ae21c8",
- "boyut": 540968
+ "sha": "092b0477c3a2651a427c266eb54504a75d15bddd397d72070f695ac4a9272399",
+ "boyut": 550334
 }

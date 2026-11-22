@@ -1,8 +1,8 @@
 {
- "surum": "3.6",
- "notlar": "Mahzen 3.6: Eşitleme penceresine «Kullanım Limitleri» eklendi — kendi Firebase hesabınızın bugünkü okuma/yazma/silme kullanımı, sınırın ne kadarı doldu ve sıfırlanmaya kalan süre. Admin duyurularının açılmamasına yol açan hata düzeltildi. Kayıtlarınız olduğu gibi kalır.",
- "dosya": "mahzen-3.6.html",
+ "surum": "3.7",
+ "notlar": "Mahzen 3.7: «Admin ile iletişime geç» düzeltildi — mesajlarınız artık yöneticiye güvenilir biçimde ulaşıyor. Kayıtlarınız olduğu gibi kalır.",
+ "dosya": "mahzen-3.7.html",
  "yerel": 1,
- "sha": "01e93ee0689aa1a5b100860fd4992dddb96de84f52481c5065bad8b1ef73ba39",
- "boyut": 571523
+ "sha": "f0df9aa5321a03c58ed40aa114db296c1417fc8685439899b05fbeae04f206fe",
+ "boyut": 572308
 }

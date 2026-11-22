@@ -1,8 +1,8 @@
 {
- "surum": "3.5",
- "notlar": "Mahzen 3.5: Admin duyuruları eklendi; yeni duyurular programda görünür, 🔔 düğmesinden okunur. Kayıtlarınız olduğu gibi kalır.",
- "dosya": "mahzen-3.5.html",
+ "surum": "3.6",
+ "notlar": "Mahzen 3.6: Eşitleme penceresine «Kullanım Limitleri» eklendi — kendi Firebase hesabınızın bugünkü okuma/yazma/silme kullanımı, sınırın ne kadarı doldu ve sıfırlanmaya kalan süre. Admin duyurularının açılmamasına yol açan hata düzeltildi. Kayıtlarınız olduğu gibi kalır.",
+ "dosya": "mahzen-3.6.html",
  "yerel": 1,
- "sha": "092b0477c3a2651a427c266eb54504a75d15bddd397d72070f695ac4a9272399",
- "boyut": 550334
+ "sha": "01e93ee0689aa1a5b100860fd4992dddb96de84f52481c5065bad8b1ef73ba39",
+ "boyut": 571523
 }

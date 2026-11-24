@@ -128,5 +128,5 @@ jobs:
         win-setup=Mahzen-Setup-*.exe
         win-exe=Mahzen.exe
       notes_json: release-notes.json
-      min_version: 3.9.0
+      min_version: 3.9.1
       core_ref: main

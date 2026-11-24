@@ -6,6 +6,7 @@ Unicode true
 ManifestDPIAware true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
 
 !ifndef VERSION
   !error "VERSION tanımlı değil"
@@ -93,7 +94,13 @@ Section "Mahzen" SecMain
   WriteRegStr HKCU "${UNKEY}" "UninstallString" '"$INSTDIR\Kaldir.exe"'
   WriteRegDWORD HKCU "${UNKEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNKEY}" "NoRepair" 1
-  Exec '"$INSTDIR\Mahzen.exe"'
+  ; /ACMA: program kapanırken yapılan otomatik (sessiz) güncelleme — kurulumdan sonra program açılmaz
+  ${GetParameters} $1
+  ClearErrors
+  ${GetOptions} $1 "/ACMA" $2
+  ${If} ${Errors}
+    Exec '"$INSTDIR\Mahzen.exe"'
+  ${EndIf}
 SectionEnd
 
 Section "Uninstall"

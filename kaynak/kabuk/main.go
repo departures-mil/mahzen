@@ -302,4 +302,8 @@ func main() {
 	setFullscreen(true)
 	w.Navigate("https://mahzen.local/index.html?r=" + strconv.FormatInt(time.Now().UnixNano(), 36))
 	w.Run()
+	applyOnExit()
 }
+
+// hiddenAttr: kurulum programı gizli pencerede (SW_HIDE) çalışır — güncellemede pencere görünmez.
+func hiddenAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{HideWindow: true} }

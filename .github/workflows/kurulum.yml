@@ -1,5 +1,8 @@
 # Yeni sürüm yayınlanınca (guncelleme/son.json veya exe.json değişince) Windows kurulum dosyasını (setup)
 # üretip GitHub sürümüne koyar. İndirme linkleri sayfası (departures-mil/duyurular) bunu kendiliğinden listeler.
+# 3.9.0'dan beri kurulum dosyası release.yml'den (ortak çekirdek release'i: latest.json + win-setup) gelir. Eski kanal köprüsü
+# (exe.json → kabuk 4) main'e girince bu iş tetiklenir; en son release latest.json içeriyorsa hiçbir şey yapmaz, aksi halde
+# release'i "latest" yapmadan oluşturur (yoksa releases/latest/download/latest.json kırılır ve güncellemeler durur).
 name: Kurulum dosyasi
 
 on:
@@ -20,7 +23,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Yeni kanal var mı (latest.json)
+        id: yeni
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          if gh release view --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx latest.json; then
+            echo "::notice::En son release latest.json içeriyor (3.9.0+): kurulum release.yml'den gelir, bu iş atlandı."
+            echo "atla=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Surum ve exe
+        if: steps.yeni.outputs.atla != 'true'
         id: s
         run: |
           python3 - <<'PY'
@@ -35,15 +47,17 @@ jobs:
               f.write(f'ver={v}\nver3={v3}\n')
           PY
       - name: Kurulum dosyasi
+        if: steps.yeni.outputs.atla != 'true'
         run: |
           sudo apt-get install -y -q nsis >/dev/null
           LC_ALL=C.UTF-8 makensis -V2 -DNAME="Mahzen" -DEXE="Mahzen.exe" -DSRC="$PWD/Mahzen.exe" \
             -DVERSION="${{ steps.s.outputs.ver3 }}" -DREGKEY=Mahzen -DICON="$PWD/kaynak/kabuk/mahzen.ico" \
             -DOUT="$PWD/Mahzen-Setup-${{ steps.s.outputs.ver }}.exe" kurulum/kurulum.nsi
       - name: Surume koy
+        if: steps.yeni.outputs.atla != 'true'
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
           T="v${{ steps.s.outputs.ver }}"
           gh release view "$T" >/dev/null 2>&1 || gh release create "$T" --target "$GITHUB_SHA" \
-            --title "Mahzen $T" --notes "Windows kurulum dosyası. Kurulu programda güncellemeler program içinden gelir."
+            --latest=false --title "Mahzen $T" --notes "Windows kurulum dosyası. Kurulu programda güncellemeler program içinden gelir."
           gh release upload "$T" "Mahzen-Setup-${{ steps.s.outputs.ver }}.exe" --clobber

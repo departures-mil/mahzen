@@ -26,8 +26,9 @@ jobs:
           python3 - <<'PY'
           import json, base64, hashlib, os
           son = json.load(open('guncelleme/son.json')); exe = json.load(open('guncelleme/exe.json'))
-          data = base64.b64decode(open('guncelleme/' + exe['dosya'], 'rb').read())
-          assert hashlib.sha256(data).hexdigest() == exe['sha'], 'exe sha256 tutmadi'
+          raw = open('guncelleme/' + exe['dosya'], 'rb').read()
+          assert hashlib.sha256(raw).hexdigest() == exe['sha'], 'exe sha256 tutmadi'
+          data = base64.b64decode(raw)
           open('Mahzen.exe', 'wb').write(data)
           v = str(son['surum']); v3 = '.'.join((v.split('.') + ['0', '0'])[:3])
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:

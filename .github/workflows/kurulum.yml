@@ -1,0 +1,49 @@
+# Yeni sürüm yayınlanınca (guncelleme/son.json veya exe.json değişince) Windows kurulum dosyasını (setup)
+# üretip GitHub sürümüne koyar. İndirme linkleri sayfası (departures-mil/duyurular) bunu kendiliğinden listeler.
+name: Kurulum dosyasi
+
+on:
+  push:
+    branches: [main]
+    paths: ['guncelleme/son.json', 'guncelleme/exe.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kurulum
+  cancel-in-progress: false
+
+jobs:
+  kurulum:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Surum ve exe
+        id: s
+        run: |
+          python3 - <<'PY'
+          import json, base64, hashlib, os
+          son = json.load(open('guncelleme/son.json')); exe = json.load(open('guncelleme/exe.json'))
+          raw = open('guncelleme/' + exe['dosya'], 'rb').read()
+          assert hashlib.sha256(raw).hexdigest() == exe['sha'], 'exe sha256 tutmadi'
+          data = base64.b64decode(raw)
+          open('Mahzen.exe', 'wb').write(data)
+          v = str(son['surum']); v3 = '.'.join((v.split('.') + ['0', '0'])[:3])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'ver={v}\nver3={v3}\n')
+          PY
+      - name: Kurulum dosyasi
+        run: |
+          sudo apt-get install -y -q nsis >/dev/null
+          LC_ALL=C.UTF-8 makensis -V2 -DNAME="Mahzen" -DEXE="Mahzen.exe" -DSRC="$PWD/Mahzen.exe" \
+            -DVERSION="${{ steps.s.outputs.ver3 }}" -DREGKEY=Mahzen -DICON="$PWD/kaynak/kabuk/mahzen.ico" \
+            -DOUT="$PWD/Mahzen-Setup-${{ steps.s.outputs.ver }}.exe" kurulum/kurulum.nsi
+      - name: Surume koy
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          T="v${{ steps.s.outputs.ver }}"
+          gh release view "$T" >/dev/null 2>&1 || gh release create "$T" --target "$GITHUB_SHA" \
+            --title "Mahzen $T" --notes "Windows kurulum dosyası. Kurulu programda güncellemeler program içinden gelir."
+          gh release upload "$T" "Mahzen-Setup-${{ steps.s.outputs.ver }}.exe" --clobber

@@ -1,17 +1,19 @@
-// Mahzen masaüstü kabuğu (yerel sürüm 3: Wi‑Fi eşitleme sunucusu, lan.go).
-// Sayfa https://mahzen.local/index.html adresinden açılır (kayıtlar bu kökene bağlıdır, değiştirme),
-// WebView2 verisi exe'nin yanındaki veri/ klasöründe durur.
+//go:build windows
+
+// Mahzen masaüstü kabuğu (yerel sürüm 4, Mahzen 3.9.0+: ortak çekirdek).
+// Sayfa https://mahzen.local/index.html adresinden açılır (kayıtlar bu kökene bağlıdır, DEĞİŞTİRME),
+// WebView2 verisi exe'nin yanındaki veri/ klasöründe durur (3.8'deki gibi).
+// Arayüz web paketidir (paket.go): exe'ye gömülü paket.zip ilk açılışta web/ altına açılır; güncellemeler
+// GitHub Releases latest.json → win-app (FCD1 yaması ya da tam zip) ve win-setup (NSIS kurulum) ile gelir (host.go).
+// Her açılışta tam ekran. Wi‑Fi eşitleme sunucusu lan.go.
 package main
 
 import (
 	_ "embed"
-	"encoding/base64"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,10 +24,14 @@ import (
 	"github.com/jchv/go-webview2/pkg/edge"
 )
 
-const nativeVersion = 3
+// nativeVersion: eski kanalın (guncelleme/exe.json) kabuk numarası. 3.8 ve önceki kabuklar (3) bu exe'yi exe.json'dan
+// "daha yeni" görüp kendilerini bununla değiştirir (köprü: araclar/kopru.py).
+const nativeVersion = 4
 
-//go:embed page.html
-var embeddedPage []byte
+// paket.zip: arayüz (web paketi, win-app kanalının tam dosyası). araclar/paket.js üretir.
+//
+//go:embed paket.zip
+var embeddedBundle []byte
 
 var (
 	user32   = syscall.NewLazyDLL("user32.dll")
@@ -85,6 +91,7 @@ var (
 	w          webview2.WebView
 	hwnd       uintptr
 	fullscreen bool
+	half       bool
 	savedPl    windowPlacement
 	havePl     bool
 )
@@ -93,53 +100,6 @@ func u16(s string) uintptr { p, _ := syscall.UTF16PtrFromString(s); return uintp
 
 func messageBox(title, text string) {
 	pMessageBox.Call(0, u16(text), u16(title), 0x10)
-}
-
-var verRe = regexp.MustCompile(`APP_VERSION="([0-9.]+)"`)
-var numRe = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
-
-func pageVersion(b []byte) string {
-	if m := verRe.FindSubmatch(b); m != nil {
-		return string(m[1])
-	}
-	return "0"
-}
-
-func compareVersions(a, b string) int {
-	x, y := strings.Split(a, "."), strings.Split(b, ".")
-	for i := 0; i < len(x) || i < len(y); i++ {
-		var p, q int
-		if i < len(x) {
-			p, _ = strconv.Atoi(x[i])
-		}
-		if i < len(y) {
-			q, _ = strconv.Atoi(y[i])
-		}
-		if p != q {
-			if p < q {
-				return -1
-			}
-			return 1
-		}
-	}
-	return 0
-}
-
-// currentPage returns the folder whose index.html is newest: guncelleme/ (downloaded) or app/ (built in).
-func currentPage() string {
-	app := filepath.Join(baseDir, "app")
-	os.MkdirAll(app, 0755)
-	if old, err := os.ReadFile(filepath.Join(app, "index.html")); err != nil || string(old) != string(embeddedPage) {
-		os.WriteFile(filepath.Join(app, "index.html"), embeddedPage, 0644)
-	}
-	upd := filepath.Join(baseDir, "guncelleme")
-	if b, err := os.ReadFile(filepath.Join(upd, "surum.txt")); err == nil {
-		v := strings.TrimSpace(string(b))
-		if _, err := os.Stat(filepath.Join(upd, "index.html")); err == nil && compareVersions(v, pageVersion(embeddedPage)) > 0 {
-			return upd
-		}
-	}
-	return app
 }
 
 func openExternal(u string) {
@@ -179,65 +139,57 @@ func setFullscreen(on bool) {
 	fullscreen = on
 }
 
-// snap puts the window on the left or right half of the screen's work area.
-func snap(right bool) {
+// setHalf: "Orta" — çalışma alanının %50 × %50'si, ortalanmış (çerçeveli pencere); tekrar basınca tam ekrana döner.
+func setHalf() {
 	setFullscreen(false)
 	if z, _, _ := pIsZoomed.Call(hwnd); z != 0 {
 		pShowWindow.Call(hwnd, swRestore)
 	}
 	_, wk := monitorRects()
-	half := (wk.R - wk.L) / 2
-	x := wk.L
-	if right {
-		x = wk.L + half
-	}
-	// the visible frame is smaller than the window rect on Windows 10/11: compensate the invisible borders
-	var wr, fr rect
-	pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
-	var dl, dt, dr, db int32
-	if pDwmGetWindowAttr.Find() == nil {
-		if r, _, _ := pDwmGetWindowAttr.Call(hwnd, 9, uintptr(unsafe.Pointer(&fr)), unsafe.Sizeof(fr)); r == 0 {
-			dl, dt, dr, db = fr.L-wr.L, fr.T-wr.T, wr.R-fr.R, wr.B-fr.B
-		}
-	}
-	pSetWindowPos.Call(hwnd, 0, uintptr(x-dl), uintptr(wk.T-dt), uintptr(half+dl+dr), uintptr(wk.B-wk.T+dt+db), swpNoZOrder|swpNoOwnerZOrder)
+	ww, wh := (wk.R-wk.L)/2, (wk.B-wk.T)/2
+	x, y := wk.L+(wk.R-wk.L-ww)/2, wk.T+(wk.B-wk.T-wh)/2
+	pSetWindowPos.Call(hwnd, 0, uintptr(x), uintptr(y), uintptr(ww), uintptr(wh), swpNoZOrder|swpNoOwnerZOrder)
+	half = true
 }
 
 type winState struct {
-	Fs  bool `json:"fs"`
-	Max bool `json:"max"`
+	Fullscreen bool `json:"fullscreen"`
+	Half       bool `json:"half"`
+	Max        bool `json:"max"`
 }
 
 func state() winState {
 	z, _, _ := pIsZoomed.Call(hwnd)
-	return winState{Fs: fullscreen, Max: z != 0}
+	return winState{Fullscreen: fullscreen, Half: half, Max: z != 0}
 }
 
 func notifyState() {
-	s := state()
-	w.Eval(fmt.Sprintf("window.onMahzenFs&&window.onMahzenFs(%v);window.onMahzenWin&&window.onMahzenWin({fs:%v,max:%v})", s.Fs, s.Fs, s.Max))
+	b, _ := jsonMarshal(state())
+	w.Eval("window.__fcWinState&&window.__fcWinState(" + string(b) + ")")
 }
 
-// winAction: min, max (maximize/restore), close, left, right, fs (full screen on/off)
+// winAction: min, half (orta / geri tam ekran), fs (tam ekran ↔ büyütülmüş pencere), close
 func winAction(a string) winState {
 	switch a {
 	case "min":
 		pShowWindow.Call(hwnd, swMinimize)
-	case "max":
+	case "half":
+		if half {
+			half = false
+			setFullscreen(true)
+		} else {
+			setHalf()
+		}
+	case "fs":
+		half = false
 		if fullscreen {
 			setFullscreen(false)
 			pShowWindow.Call(hwnd, swMaximize)
-		} else if z, _, _ := pIsZoomed.Call(hwnd); z != 0 {
-			pShowWindow.Call(hwnd, swRestore)
 		} else {
-			pShowWindow.Call(hwnd, swMaximize)
+			setFullscreen(true)
 		}
 	case "close":
 		pPostMessage.Call(hwnd, wmClose, 0, 0)
-	case "left", "right":
-		snap(a == "right")
-	case "fs":
-		setFullscreen(!fullscreen)
 	}
 	go func() { time.Sleep(150 * time.Millisecond); w.Dispatch(notifyState) }()
 	return state()
@@ -280,7 +232,11 @@ func chromium(v webview2.WebView) *edge.Chromium {
 
 func main() {
 	baseDir = filepath.Dir(exePath())
+	duman := ""
 	for i, a := range os.Args {
+		if strings.HasPrefix(a, "--duman=") { // CI açılış testi: sayfa durumunu dosyaya yazar ve kapanır
+			duman = strings.TrimPrefix(a, "--duman=")
+		}
 		if a == "--bekle" && i+1 < len(os.Args) {
 			if pid, err := strconv.Atoi(os.Args[i+1]); err == nil {
 				waitForPid(pid)
@@ -296,7 +252,12 @@ func main() {
 	}
 	os.Remove(exe + ".new")
 
-	dir := currentPage()
+	bundle, berr := paketHazirla(baseDir, embeddedBundle)
+	if berr != nil {
+		messageBox("Mahzen", "Mahzen arayüzü açılamadı ("+berr.Error()+"). Program klasörüne yazılabildiğinden emin olun:\n"+baseDir)
+		return
+	}
+	dir := paketDizin(baseDir, bundle)
 	w = webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
 		AutoFocus: true,
@@ -318,6 +279,7 @@ func main() {
 	}
 	c.AcceleratorKeyCallback = func(vk uint) bool {
 		if vk == 0x7A { // F11
+			half = false
 			setFullscreen(!fullscreen)
 			notifyState()
 			return true
@@ -331,33 +293,11 @@ func main() {
 	}
 
 	w.Bind("mahzenOpen", openExternal)
-	w.Bind("mahzenToggleFs", func() bool { setFullscreen(!fullscreen); notifyState(); return fullscreen })
-	w.Bind("mahzenNativeVersion", func() int { return nativeVersion })
-	w.Bind("mahzenSaveUpdate", func(v string, html string) bool {
-		if !verRe.MatchString(html) || !numRe.MatchString(v) {
-			return false
-		}
-		upd := filepath.Join(baseDir, "guncelleme")
-		os.MkdirAll(upd, 0755)
-		tmp := filepath.Join(upd, "index.html.tmp")
-		if os.WriteFile(tmp, []byte(html), 0644) != nil || os.Rename(tmp, filepath.Join(upd, "index.html")) != nil {
-			return false
-		}
-		return os.WriteFile(filepath.Join(upd, "surum.txt"), []byte(v), 0644) == nil
-	})
-	w.Bind("mahzenRestart", restart)
-	w.Bind("mahzenWin", winAction)
-	w.Bind("mahzenWinState", state)
-	// native update: the page downloads a new exe (base64), it is swapped in by mahzenRestart
-	w.Bind("mahzenSaveNative", func(ver int, b64 string) bool {
-		b, err := base64.StdEncoding.DecodeString(b64)
-		if err != nil || len(b) < 1<<20 || b[0] != 'M' || b[1] != 'Z' || ver <= nativeVersion {
-			return false
-		}
-		return os.WriteFile(exePath()+".new", b, 0755) == nil
-	})
-
+	hostBind(bundle)
 	lanBind()
+	if duman != "" {
+		dumanBind(duman)
+	}
 
 	setFullscreen(true)
 	w.Navigate("https://mahzen.local/index.html?r=" + strconv.FormatInt(time.Now().UnixNano(), 36))

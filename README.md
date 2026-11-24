@@ -1,19 +1,22 @@
 # Mahzen
 
-Windows masaüstü programı (Go + WebView2 kabuğu) ve Android uygulaması; arayüzün tamamı tek sayfa (`kaynak/mahzen.html`).
-Kayıtlar Firebase ve aynı Wi‑Fi üzerinden şifreli eşitlenir; **kayıtlar bu depoda bulunmaz**.
+Hesaplar, şifreler ve dosyalar. Windows masaüstü programı (Go + WebView2 kabuğu) ve Android uygulaması; arayüz tek sayfa
+(`kaynak/web/index.html`) + ortak çekirdek (`kaynak/web/cekirdek/`, departures-mil/ortak-cekirdek kopyası).
+Kayıtlar Firebase (kendi projeniz) ve aynı Wi‑Fi üzerinden şifreli eşitlenir; **kayıtlar bu depoda bulunmaz**.
 
-- `kaynak/mahzen.html` — uygulama sayfası (APP_VERSION). `kaynak/kabuk/` — masaüstü kabuğu (Go). `kaynak/android/` — APK derleme betiği.
-- `guncelleme/son.json` + `mahzen-<sürüm>.html` — sayfa güncellemesi; `guncelleme/exe.json` + `Mahzen-exe-<n>.b64` — masaüstü kabuğu.
-  Programlar buradan indirir ve sha256 ile doğrular.
-- Android Java kaynağı ve imza anahtarı geliştiricinin bilgisayarındadır (`Mahzen-v2.5\android`), bu depoda değildir.
+- `kaynak/web/` — arayüz: `index.html` (uygulama), `kabuk-fc.js`/`kabuk-fc.css` (çekirdek bağlantısı: üst çubuk, Ayarlar, klasik şema,
+  arşiv, eski kabuk köprüsü), `surum.js` (otomatik), `cekirdek/` (fc-core.js, css, yazı tipleri; commit `cekirdek/VERSION`).
+- `kaynak/kabuk/` — masaüstü kabuğu (Go): tam ekran açılış, `window.fcHost` (pencere düğmeleri, indirme, güncelleme), web paketi, FCD1 yamaları,
+  Wi‑Fi eşitleme sunucusu. Derleme: `kaynak/kabuk/DERLE.txt`.
+- `kaynak/kurulum/mahzen.nsi` — NSIS kurulum (kullanıcı başına, tek tık, tr/en/ar). Veri klasörü (`veri\` exe'nin yanında) değişmez.
+- `kaynak/android/` — APK derleme betiği; Android Java kaynağı ve imza anahtarı geliştiricinin bilgisayarındadır (`Mahzen-v2.5\android`), bu depoda değildir.
+- `guncelleme/` — ESKİ kanal (≤ 3.8 kurulumları): `son.json` (sayfa, Android hâlâ okur) ve `exe.json` (masaüstü kabuğu köprüsü).
 
-## Yeni sürüm
-1. `kaynak/mahzen.html` içinde `APP_VERSION`'ı artır.
-2. `python3 araclar/yayinla.py sayfa "notlar"`  (kabuk değiştiyse: `python3 araclar/yayinla.py exe Mahzen.exe <n> "notlar"`)
-3. `git add -A && git commit -m "Mahzen X" && git push`
+## Yeni sürüm (3.9.0'dan beri GitHub Releases)
+1. `release-notes.json` (tr/en/ar) → `node araclar/surum.js X.Y.Z`
+2. `npm test` (arayüz duman testi + go test + paket), dal `ortak-cekirdek-*` ya da main
+3. main'de: `gh api -X POST repos/departures-mil/mahzen/actions/workflows/release.yml/dispatches -f ref=main`
+   → release `vX.Y.Z`: `latest.json`, win-app (web paketi zip + son 5 sürümden FCD1 yamaları), win-setup (NSIS), win-exe.
+4. Kabuk (Go) değiştiyse `release.yml` → `min_version`'ı o sürüme çekin (eski kabuklar win-setup ile güncellenir).
 
-## 3.8 — Asistan Agent
-`kaynak/mahzen.html` sonunda `<script id="fc-agent">` = ortak-cekirdek/web/dist/fc-agent.js (gömülü, `</script` → `<\/script`)
-ve `fc-agent-baslat`. Menüde "✉ Admin İletişim"in önüne "✦ Asistan Agent" düğmesi (ayarlar penceresi), sağ altta ✦ panel
-(Ekle düğmesinin üstünde). Bildirim: Android köprüsünde `notify(baslik, metin)` varsa o, yoksa program içi bildirim.
+Eski masaüstü kurulumları (kabuk ≤ 3) için köprü: release'ten sonra `python3 araclar/kopru.py` → `guncelleme/exe.json` (kabuk 4) → commit + push.

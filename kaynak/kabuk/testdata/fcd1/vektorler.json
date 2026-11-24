@@ -1,0 +1,108 @@
+{
+ "uretici": "ortak-cekirdek/delta/node/fcdelta.js",
+ "iyi": [
+  {
+   "name": "bos-abc",
+   "old": 0,
+   "new": 3,
+   "patch": 99
+  },
+  {
+   "name": "ayni",
+   "old": 200000,
+   "new": 200000,
+   "patch": 99
+  },
+  {
+   "name": "metin-duzenleme",
+   "old": 200000,
+   "new": 190012,
+   "patch": 1524
+  },
+  {
+   "name": "ikili-kayma",
+   "old": 300000,
+   "new": 295777,
+   "patch": 5899
+  },
+  {
+   "name": "tamamen-yeni",
+   "old": 40000,
+   "new": 50000,
+   "patch": 50106
+  },
+  {
+   "name": "bosalt",
+   "old": 1000,
+   "new": 0,
+   "patch": 94
+  }
+ ],
+ "bozuk": [
+  {
+   "name": "magic",
+   "src": "metin-duzenleme",
+   "err": "FCD1_MAGIC"
+  },
+  {
+   "name": "codec",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CODEC"
+  },
+  {
+   "name": "kaynak-sha",
+   "src": "metin-duzenleme",
+   "err": "FCD1_SOURCE"
+  },
+  {
+   "name": "kisa-baslik",
+   "src": "metin-duzenleme",
+   "err": "FCD1_TRUNCATED"
+  },
+  {
+   "name": "kesik-govde",
+   "src": "metin-duzenleme",
+   "err": "ANY"
+  },
+  {
+   "name": "fazla-bayt",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CORRUPT"
+  },
+  {
+   "name": "hedef-sha",
+   "src": "metin-duzenleme",
+   "err": "FCD1_TARGET"
+  },
+  {
+   "name": "endsiz",
+   "src": "metin-duzenleme",
+   "err": "FCD1_TRUNCATED"
+  },
+  {
+   "name": "end-sonrasi",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CORRUPT"
+  },
+  {
+   "name": "copy-tasma",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CORRUPT"
+  },
+  {
+   "name": "cikti-tasma",
+   "src": "metin-duzenleme",
+   "err": "FCD1_TARGET"
+  },
+  {
+   "name": "bilinmeyen-op",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CORRUPT"
+  },
+  {
+   "name": "uzun-varint",
+   "src": "metin-duzenleme",
+   "err": "FCD1_CORRUPT"
+  }
+ ]
+}

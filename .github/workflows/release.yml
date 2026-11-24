@@ -86,12 +86,16 @@ jobs:
           $v = '${{ steps.ver.outputs.version }}'
           $dir = Join-Path $env:RUNNER_TEMP 'mahzen-kur'
           New-Item -ItemType Directory -Force "$dir\veri" | Out-Null; Set-Content "$dir\veri\kayit.txt" 'KAYIT'
-          $p = Start-Process -FilePath "cikti\Mahzen-Setup-$v.exe" -ArgumentList '/S', "/D=$dir" -PassThru -Wait
-          Start-Sleep 3; Get-Process Mahzen -ErrorAction SilentlyContinue | Stop-Process -Force
+          # -Wait kullanılmaz: kurulum sonunda Mahzen.exe açılır ve Start-Process -Wait onu da bekler
+          $p = Start-Process -FilePath "cikti\Mahzen-Setup-$v.exe" -ArgumentList '/S', "/D=$dir" -PassThru
+          if (-not $p.WaitForExit(180000)) { throw 'kurulum bitmedi' }
+          if ($p.ExitCode -ne 0) { throw "kurulum çıkış kodu $($p.ExitCode)" }
+          Start-Sleep 4; Get-Process Mahzen -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 2
           if (-not (Test-Path "$dir\Mahzen.exe")) { throw 'Mahzen.exe kurulmadı' }
           if ((Get-FileHash "$dir\Mahzen.exe").Hash -ne (Get-FileHash cikti\Mahzen.exe).Hash) { throw 'kurulan exe farklı' }
           if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mahzen' -ErrorAction SilentlyContinue)) { throw 'kaldırma kaydı yok' }
-          Start-Process -FilePath "$dir\Kaldir.exe" -ArgumentList '/S', "_?=$dir" -Wait
+          $u = Start-Process -FilePath "$dir\Kaldir.exe" -ArgumentList '/S', "_?=$dir" -PassThru
+          if (-not $u.WaitForExit(120000)) { throw 'kaldırma bitmedi' }
           if ((Get-Content "$dir\veri\kayit.txt") -ne 'KAYIT') { throw 'kaldırma kayıtları sildi' }
           if (Test-Path "$dir\Mahzen.exe") { throw 'kaldırma exe''yi silmedi' }
       - name: Yayınlanacak dosyaları topla

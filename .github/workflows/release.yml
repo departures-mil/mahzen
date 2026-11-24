@@ -1,0 +1,128 @@
+# Mahzen — test → derleme (Windows: Go + WebView2 kabuğu, web paketi, NSIS kurulum) → GitHub Release (ortak çekirdek, FCD1 yamaları).
+# Yayın: sürümü değiştirin (node araclar/surum.js X.Y.Z + release-notes.json), main'e birleştirin, sonra
+#   Actions → release → "Run workflow" (main)   ya da   gh api -X POST repos/departures-mil/mahzen/actions/workflows/release.yml/dispatches -f ref=main
+# Entegrasyon dallarında (ortak-cekirdek-*) yalnız test + derleme çalışır.
+# Kanallar: win-app = web paketi (zip; kabuk FCD1 yamasıyla ya da tam zip ile günceller), win-setup = NSIS kurulum, win-exe = tek exe (eski kanal köprüsü için).
+# Android: Java kaynağı bu depoda değil (geliştiricinin bilgisayarında) → android kanalı yok.
+name: release
+on:
+  push:
+    branches: ['ortak-cekirdek-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24', cache: false }
+      - run: npm ci
+      - name: Chromium (arayüz duman testi)
+        run: npx playwright-core install --with-deps chromium
+      - name: Go bağımlılıkları (sabit commit'ler)
+        run: bash araclar/deps.sh
+      - name: Web paketi
+        run: node araclar/paket.js
+      - name: npm test (arayüz duman testi + go test + Windows go vet + paket + sürüm)
+        run: npm test
+
+  build-win:
+    needs: test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.24', cache: false }
+      - id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Web paketi + Mahzen.exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash araclar/deps.sh
+          node araclar/paket.js
+          cd kaynak/kabuk
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o ../../cikti/Mahzen.exe .
+      - name: Açılış testi (gerçek WebView2, tam ekran, çekirdek, üst çubuk)
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'mahzen-duman'; New-Item -ItemType Directory -Force $d | Out-Null
+          Copy-Item cikti\Mahzen.exe $d\
+          $out = Join-Path $d 'sonuc.json'
+          $p = Start-Process -FilePath "$d\Mahzen.exe" -ArgumentList "--duman=$out" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Mahzen.exe kapanmadı' }
+          if (-not (Test-Path $out)) { throw 'açılış testi sonucu yok' }
+          $r = Get-Content $out -Raw; Write-Host $r
+          $j = $r | ConvertFrom-Json
+          if ($j.timeout) { throw 'zaman aşımı' }
+          if (-not $j.fcHost -or -not $j.core -or -not $j.mahzen -or $j.legacy -or $j.topbar -lt 1 -or $j.win -ne 4 -or -not $j.fullscreen) { throw "açılış testi başarısız: $r" }
+          if ($j.version -ne '${{ steps.ver.outputs.version }}' -or $j.origin -ne 'https://mahzen.local') { throw "sürüm/köken: $r" }
+          if ($j.errors.Count -gt 0) { throw "sayfa hataları: $r" }
+          if (-not (Test-Path "$d\web\paket.zip")) { throw 'web\paket.zip yok' }
+          if ((Get-FileHash "$d\web\paket.zip").Hash -ne (Get-FileHash cikti\Mahzen-web.zip).Hash) { throw 'kurulu paket.zip release dosyasından farklı' }
+      - name: NSIS kurulum (kullanıcı başına, tek tık, tr/en/ar)
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $mk = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+          if (-not $mk) { $mk = "${env:ProgramFiles(x86)}\NSIS\makensis.exe" }
+          if (-not (Test-Path $mk)) { choco install nsis -y --no-progress | Out-Null; $mk = "${env:ProgramFiles(x86)}\NSIS\makensis.exe" }
+          & $mk -V2 "-DVERSION=$v" "-DEXE=..\..\cikti\Mahzen.exe" "-DOUT=..\..\cikti\Mahzen-Setup-$v.exe" kaynak\kurulum\mahzen.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'makensis başarısız' }
+      - name: Kurulum testi (sessiz kurulum → exe + kısayol + kaldırma kaydı; kaldırma veri\ klasörünü korur)
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          $dir = Join-Path $env:RUNNER_TEMP 'mahzen-kur'
+          New-Item -ItemType Directory -Force "$dir\veri" | Out-Null; Set-Content "$dir\veri\kayit.txt" 'KAYIT'
+          $p = Start-Process -FilePath "cikti\Mahzen-Setup-$v.exe" -ArgumentList '/S', "/D=$dir" -PassThru -Wait
+          Start-Sleep 3; Get-Process Mahzen -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not (Test-Path "$dir\Mahzen.exe")) { throw 'Mahzen.exe kurulmadı' }
+          if ((Get-FileHash "$dir\Mahzen.exe").Hash -ne (Get-FileHash cikti\Mahzen.exe).Hash) { throw 'kurulan exe farklı' }
+          if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mahzen' -ErrorAction SilentlyContinue)) { throw 'kaldırma kaydı yok' }
+          Start-Process -FilePath "$dir\Kaldir.exe" -ArgumentList '/S', "_?=$dir" -Wait
+          if ((Get-Content "$dir\veri\kayit.txt") -ne 'KAYIT') { throw 'kaldırma kayıtları sildi' }
+          if (Test-Path "$dir\Mahzen.exe") { throw 'kaldırma exe''yi silmedi' }
+      - name: Yayınlanacak dosyaları topla
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release
+          cp cikti/Mahzen-web.zip cikti/Mahzen.exe cikti/Mahzen-Setup-*.exe release/
+          ls -la release
+          sha256sum release/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-win
+          path: release/
+          retention-days: 5
+
+  release:
+    needs: [test, build-win]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: departures-mil/ortak-cekirdek/.github/workflows/reusable-release.yml@main
+    with:
+      app_id: mahzen
+      version: ${{ needs.build-win.outputs.version }}
+      file_prefix: Mahzen
+      release_title: Mahzen v${{ needs.build-win.outputs.version }}
+      files: |
+        win-app=Mahzen-web.zip
+        win-setup=Mahzen-Setup-*.exe
+        win-exe=Mahzen.exe
+      notes_json: release-notes.json
+      min_version: 3.9.0
+      core_ref: main

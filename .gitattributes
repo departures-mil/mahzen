@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.ico binary
+*.syso binary
+*.png binary
+*.woff2 binary
+*.b64 -text
+*.zip binary
+*.old binary
+*.new binary
+*.patch binary

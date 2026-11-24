@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Mahzen GitHub yayın aracı (depo kökünden).
+"""ESKİ KANAL (Mahzen ≤ 3.8): raw guncelleme/son.json + exe.json. 3.9.0'dan beri yayın GitHub Releases ile
+(.github/workflows/release.yml); eski kurulumlara köprü araclar/kopru.py ile verilir. Bu araç yalnız gerekirse eski kanala elle
+dosya koymak içindir.
+
+Mahzen GitHub yayın aracı (depo kökünden).
 
   python3 araclar/yayinla.py sayfa "notlar" [--yerel 1]     kaynak/mahzen.html -> guncelleme/son.json
   python3 araclar/yayinla.py exe Mahzen.exe <yerel sürüm> "notlar"   -> guncelleme/exe.json

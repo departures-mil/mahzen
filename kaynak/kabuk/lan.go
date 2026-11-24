@@ -1,3 +1,5 @@
+//go:build windows
+
 // Wi‑Fi ile internetsiz eşitleme — masaüstü tarafı (yerel ağ sunucusu + istemci).
 // Telefon aynı ağdan bağlanır; eşitleme isteği sayfaya (window.__lanReq) iletilir, cevap mahzenLanReply ile gelir.
 // Kayıtlar sayfada ana şifreyle şifrelenir; burada yalnızca taşınır.

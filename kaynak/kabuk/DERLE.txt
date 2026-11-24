@@ -1,5 +1,8 @@
-Mahzen.exe (yerel sürüm 2) kaynağı. Derleme (Linux/Windows, Go 1.24):
-  deps/ altına: github.com/jchv/go-webview2 @56598839c808, github.com/jchv/go-winloader @c1995be93bd1, github.com/golang/sys @beda7e5e158e
-  page.html = gömülecek sayfa (son sürüm index.html)
-  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o Mahzen.exe .
-Yeni exe yayını: YAYINCI_SIFRE=... python3 yayinla.py --exe Mahzen.exe <yerel sürüm> "notlar"  (nativeVersion sabitini artır)
+Mahzen.exe (yerel kabuk 4, Mahzen 3.9.0+) kaynağı. Go 1.24, CGO'suz; Windows dışında yalnız go test çalışır.
+  bash araclar/deps.sh        → deps/ (go-webview2 @56598839c808, go-winloader @c1995be93bd1, golang/sys @beda7e5e158e; go.mod replace)
+  node araclar/paket.js       → paket.zip (gömülü arayüz = release'teki win-app dosyası)
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o ../../cikti/Mahzen.exe .
+  go test ./...               → FCD1 (testdata/fcd1, node araclar/fcd1-vektor.js üretir) + paket kurulumu
+Dosyalar: main.go (pencere, tam ekran, açılış), host.go (window.fcHost: pencere, indirme, güncelleme, agent, --duman açılış testi),
+paket.go (web\ paketi), fcd1.go (FCD1 yama uygulayıcı), lan.go (Wi‑Fi eşitleme sunucusu).
+Yayın CI'dadır (.github/workflows/release.yml): exe + NSIS kurulum (kaynak/kurulum/mahzen.nsi) + web paketi.

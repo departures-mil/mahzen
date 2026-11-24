@@ -12,3 +12,8 @@ Kayıtlar Firebase ve aynı Wi‑Fi üzerinden şifreli eşitlenir; **kayıtlar 
 1. `kaynak/mahzen.html` içinde `APP_VERSION`'ı artır.
 2. `python3 araclar/yayinla.py sayfa "notlar"`  (kabuk değiştiyse: `python3 araclar/yayinla.py exe Mahzen.exe <n> "notlar"`)
 3. `git add -A && git commit -m "Mahzen X" && git push`
+
+## 3.8 — Asistan Agent
+`kaynak/mahzen.html` sonunda `<script id="fc-agent">` = ortak-cekirdek/web/dist/fc-agent.js (gömülü, `</script` → `<\/script`)
+ve `fc-agent-baslat`. Menüde "✉ Admin İletişim"in önüne "✦ Asistan Agent" düğmesi (ayarlar penceresi), sağ altta ✦ panel
+(Ekle düğmesinin üstünde). Bildirim: Android köprüsünde `notify(baslik, metin)` varsa o, yoksa program içi bildirim.

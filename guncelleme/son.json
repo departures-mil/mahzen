@@ -1,8 +1,8 @@
 {
- "surum": "3.7",
- "notlar": "Mahzen 3.7: «Admin ile iletişime geç» düzeltildi — mesajlarınız artık yöneticiye güvenilir biçimde ulaşıyor. Kayıtlarınız olduğu gibi kalır.",
- "dosya": "mahzen-3.7.html",
+ "surum": "3.8",
+ "notlar": "Yeni: ✦ Asistan Agent — bütün programlarınızdaki çalışmanızı izler ve daha verimli çalışmanız için öneriler verir (bildirim + program içi panel). Menüden '✦ Asistan Agent' ile açılıp kapatılabilir.",
+ "dosya": "mahzen-3.8.html",
  "yerel": 1,
- "sha": "f0df9aa5321a03c58ed40aa114db296c1417fc8685439899b05fbeae04f206fe",
- "boyut": 572308
+ "sha": "b2bb18ea93a9a72a60f670236f3f65b3b517a6a8a0d22975b8a318961ed0dde9",
+ "boyut": 710870
 }

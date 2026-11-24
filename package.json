@@ -1,7 +1,7 @@
 {
   "name": "mahzen",
   "productName": "Mahzen",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "private": true,
   "description": "Mahzen — hesaplar, şifreler ve dosyalar (Windows: Go + WebView2 kabuğu; arayüz kaynak/web). Geliştirme paketi.",
   "author": "departures-mil",

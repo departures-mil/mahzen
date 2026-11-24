@@ -164,7 +164,7 @@ func metaInt(meta map[string]interface{}, k string) int64 {
 
 // runSetup: win-setup (NSIS) kurulum dosyasını doğrular, geçici klasöre yazar, bu klasöre kurmak üzere (/D=) çalıştırır ve programı kapatır.
 // Kurulum aynı klasöre yapıldığı için veri/ (kayıtlar) ve wifi-esitleme.json yerinde kalır.
-func runSetup(b []byte, meta map[string]interface{}) hostRes {
+func runSetup(b []byte, meta map[string]interface{}, deferred bool) hostRes {
 	if sha := metaStr(meta, "targetSha256"); sha == "" || shaHex(b) != sha {
 		return errRes(errors.New("BAD_HASH"))
 	}
@@ -187,12 +187,64 @@ func runSetup(b []byte, meta map[string]interface{}) hostRes {
 	if got, _ := os.ReadFile(exe); shaHex(got) != shaHex(b) {
 		return errRes(errors.New("STAGE_VERIFY"))
 	}
-	cmd := exec.Command(exe, "/D="+baseDir) // NSIS: /D= son parametre, tırnaksız
-	if err := cmd.Start(); err != nil {
+	if deferred { // otomatik güncelleme: program kapanınca sessiz kurulur (main: w.Run sonrası)
+		hostMu.Lock()
+		pendingSetup = exe
+		hostMu.Unlock()
+		return okRes("staged")
+	}
+	if err := startSetup(exe, true); err != nil {
 		return errRes(errors.New("SETUP_START"))
 	}
 	go func() { time.Sleep(400 * time.Millisecond); w.Dispatch(func() { pPostMessage.Call(hwnd, wmClose, 0, 0) }) }()
 	return okRes("restarting")
+}
+
+// pendingSetup: arka planda indirilip doğrulanmış kurulum (program kapanınca çalışır). stagedWeb: yeni web paketi kuruldu, yeniden açılış bekliyor.
+var pendingSetup string
+var stagedWeb bool
+
+// startSetup: NSIS kurulumunu SESSİZ (/S) ve penceresiz başlatır, bu klasöre (/D=) kurar. ac=false → kurulum bitince program açılmaz (/ACMA).
+func startSetup(exe string, ac bool) error {
+	args := []string{"/S"}
+	if !ac {
+		args = append(args, "/ACMA")
+	}
+	args = append(args, "/D="+baseDir) // NSIS: /D= son parametre, tırnaksız
+	cmd := exec.Command(exe, args...)
+	cmd.SysProcAttr = hiddenAttr()
+	return cmd.Start()
+}
+
+// applyStaged: hazır güncellemeyi hemen kurar ve programı yeniden açar (Güncelle düğmesi).
+func applyStaged() hostRes {
+	hostMu.Lock()
+	ps, sw := pendingSetup, stagedWeb
+	pendingSetup, stagedWeb = "", false
+	hostMu.Unlock()
+	if ps != "" {
+		if err := startSetup(ps, true); err != nil {
+			return errRes(errors.New("SETUP_START"))
+		}
+		go func() { time.Sleep(400 * time.Millisecond); w.Dispatch(func() { pPostMessage.Call(hwnd, wmClose, 0, 0) }) }()
+		return okRes("restarting")
+	}
+	if sw {
+		later(restart)
+		return okRes("restarting")
+	}
+	return errRes(errors.New("NOTHING_STAGED"))
+}
+
+// applyOnExit: program kapanırken hazır kurulumu sessiz çalıştırır (program yeniden açılmaz). Web paketi zaten kurulu: bir sonraki açılışta gelir.
+func applyOnExit() {
+	hostMu.Lock()
+	ps := pendingSetup
+	pendingSetup = ""
+	hostMu.Unlock()
+	if ps != "" {
+		startSetup(ps, false)
+	}
 }
 
 func later(f func()) { go func() { time.Sleep(500 * time.Millisecond); w.Dispatch(f) }() }
@@ -206,6 +258,7 @@ func upFinish(id int) hostRes {
 		return errRes(errors.New("NO_UPLOAD"))
 	}
 	b := u.buf.Bytes()
+	deferred, _ := u.meta["deferred"].(bool)
 	switch u.kind {
 	case "patch":
 		if _, err := paketYama(baseDir, b, metaStr(u.meta, "targetSha256"), metaInt(u.meta, "targetSize")); err != nil {
@@ -213,7 +266,7 @@ func upFinish(id int) hostRes {
 		}
 	case "full":
 		if isSetup(u.meta) {
-			return runSetup(b, u.meta)
+			return runSetup(b, u.meta, deferred)
 		}
 		if sz := metaInt(u.meta, "targetSize"); sz > 0 && int64(len(b)) != sz {
 			return errRes(errors.New("BAD_SIZE"))
@@ -223,6 +276,12 @@ func upFinish(id int) hostRes {
 		}
 	default:
 		return errRes(errors.New("BAD_KIND"))
+	}
+	if deferred { // yeni web paketi kuruldu; bir sonraki açılışta gelir (Güncelle → hemen yeniden aç)
+		hostMu.Lock()
+		stagedWeb = true
+		hostMu.Unlock()
+		return okRes("staged")
 	}
 	later(restart)
 	return okRes("restarting")
@@ -316,7 +375,8 @@ window.fcHost = {
     getState: function () { return window.fcWin('state'); },
     onState: function (cb) { subs.push(cb); return function () { subs = subs.filter(function (x) { return x !== cb; }); }; }
   },
-  update: { channel: 'win-app', applyPatch: function (b, m) { return send('patch', b, m); }, installFull: function (b, m) { return send('full', b, m); } },
+  update: { channel: 'win-app', applyPatch: function (b, m) { return send('patch', b, m); }, installFull: function (b, m) { return send('full', b, m); },
+    deferred: true, applyStaged: function () { return unwrap(window.fcUpApply()); } },
   net: { download: download },
   agent: {
     read: function () { return unwrap(window.fcAgent('read', '', '')); },
@@ -371,6 +431,7 @@ func hostBind(p paketBilgi) {
 	})
 	w.Bind("fcUpFinish", func(id int) bool { safeGo(id, func() hostRes { return upFinish(id) }); return true })
 	w.Bind("fcAgent", func(op, key, js string) hostRes { return agentOp(op, key, js) })
+	w.Bind("fcUpApply", func() hostRes { return applyStaged() })
 	w.Init(fmt.Sprintf(hostJS, string(info)))
 }
 

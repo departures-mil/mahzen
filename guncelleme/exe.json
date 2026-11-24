@@ -1,7 +1,8 @@
 {
- "surum": 3,
- "notlar": "Wi‑Fi ile internetsiz eşitleme için yerel ağ sunucusu (📶).",
- "dosya": "Mahzen-exe-3.b64",
- "sha": "8ba70a350efa8ceb8a304746bbcb282fb929a7b307d13b8fb384ec3e6fdb2e26",
- "boyut": 10493952
+ "surum": 4,
+ "notlar": "Mahzen 3.9: yeni görünüm, tam ekran açılış, Ayarlar sayfası ve GitHub'dan tek tıkla güncelleme. Kayıtlarınız olduğu gibi kalır. / New look, settings page and one-click updates; your records are kept. / مظهر جديد وصفحة إعدادات وتحديث بضغطة واحدة؛ سجلاتك محفوظة.",
+ "dosya": "Mahzen-exe-4.b64",
+ "mahzen": "3.9.0",
+ "sha": "61805fd18ca10b7e7379a6260a33e5fdef9614042ff70292009998a20f72cc58",
+ "boyut": 11085144
 }

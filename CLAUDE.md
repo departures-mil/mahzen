@@ -1,7 +1,7 @@
 # Mahzen
 
 Hesap/şifre/dosya kasası. Windows: Go + WebView2 kabuğu (`kaynak/kabuk`), arayüz tek sayfa + ortak çekirdek (`kaynak/web`). Android APK'nın Java
-kaynağı bu depoda DEĞİL (geliştiricinin bilgisayarı); Android eski kanaldan (`guncelleme/son.json`, 3.8 sayfası) güncellenir — son.json'a dokunma.
+kaynağı bu depoda DEĞİL (kullanıcının bilgisayarı); Android eski kanaldan (`guncelleme/son.json`, 3.8 sayfası) güncellenir — son.json'a dokunma.
 
 ## Kurallar (kullanıcı)
 - Sürüm semver X.Y.Z, etiket `vX.Y.Z`. Tek kaynak `package.json` → `node araclar/surum.js X.Y.Z` (index.html APP_VERSION + surum.js). Notlar `release-notes.json` (tr/en/ar).

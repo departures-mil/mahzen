@@ -3503,8 +3503,8 @@ $("#hdrSync").onclick=async e=>{e.stopPropagation();$("#menu").classList.remove(
 renderHdr();$("#updBarX").onclick=()=>{updBarHidden=updInfo&&updInfo.surum;showUpdBar()};
 
 /* ---------- admin contact ----------
-   Messages go to the administrator's mailbox through FormSubmit; the address is never shown. */
-const ADMIN_TO=atob("").split("").reverse().join("");
+   Messages go only to the administrator's anonymous inbox; no personal address is stored. */
+const ADMIN_TO=""; /* kişisel e-posta adresi kaldırıldı; mesajlar yalnız mesaj kutusuna gider */
 $("#contactBtn").onclick=()=>{$("#menu").classList.remove("on");openOv("#contactOv");setTimeout(()=>$("#cMsg").focus(),50)};
 $("#cCancel").onclick=()=>closeOv("#contactOv");
 $("#cSend").onclick=async()=>{const name=$("#cName").value.trim(),mail=$("#cMail").value.trim(),msg=$("#cMsg").value.trim();
